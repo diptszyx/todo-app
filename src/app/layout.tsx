@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
+import WalletProviderComponent from './components/WalletProvider'
+import 'react-toastify/dist/ReactToastify.css';
+import { ToastContainer } from 'react-toastify';
 
 const geistSans = localFont({
   src: "./fonts/GeistVF.woff",
@@ -28,7 +31,15 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        {children}
+        <WalletProviderComponent>
+          {children}
+        </WalletProviderComponent>
+        <ToastContainer 
+          position="top-right"
+          autoClose={1000}
+          hideProgressBar={false}
+          closeOnClick
+        />
       </body>
     </html>
   );

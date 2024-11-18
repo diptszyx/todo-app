@@ -1,101 +1,237 @@
-import Image from "next/image";
+'use client'
+
+import { useState, useMemo, useEffect } from 'react';
+import { useWallet, useConnection } from '@solana/wallet-adapter-react';
+import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
+import TodoItem from './components/TodoItem';
+import { createProgram, findTaskPDA } from './utils/program';
+import { PublicKey } from '@solana/web3.js';
+import { toast } from 'react-toastify';
+import { BN } from '@coral-xyz/anchor';
+import { SystemProgram } from '@solana/web3.js';
+
+interface Todo {
+  publicKey: PublicKey;
+  account: {
+    authority: PublicKey;
+    content: string;
+    marked: boolean;
+  };
+}
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+  const { connection } = useConnection();
+  const wallet = useWallet();
+  const [todos, setTodos] = useState<Todo[]>([]);
+  const [newTask, setNewTask] = useState('');
+  const [loading, setLoading] = useState(false);
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+  const program = useMemo(() => {
+    if (connection && wallet) {
+      return createProgram(connection, wallet);
+    }
+  }, [connection, wallet]);
+
+  const addTodo = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!program || !wallet.publicKey || !newTask.trim()) return;
+    
+    try {
+      setLoading(true);
+      
+      const [taskPDA] = findTaskPDA(
+        wallet.publicKey,
+        newTask,
+        program.programId
+      );
+
+      const existingAccount = await connection.getAccountInfo(taskPDA);
+      
+      if (existingAccount) {
+        toast.error('This task already exists!');
+        return;
+      }
+
+      console.log("Adding task with PDA:", taskPDA.toString());
+
+      const tx = await program.methods
+        .addTask(newTask)
+        .accounts({
+          taskAccount: taskPDA,
+          authority: wallet.publicKey,
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc();
+
+      await connection.confirmTransaction(tx, 'confirmed');
+      
+      await fetchTodos();
+      setNewTask('');
+      toast.success('Task added successfully!');
+    } catch (error) {
+      console.error("Error details:", error);
+      toast.error('Failed to add task');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const deleteTodo = async (todo: Todo) => {
+    if (!program || !wallet.publicKey) return;
+
+    try {
+      setLoading(true);
+      await program.methods
+        .removeTask()
+        .accounts({
+          taskAccount: todo.publicKey,
+          authority: wallet.publicKey,
+        })
+        .rpc();
+
+      await fetchTodos();
+      toast.success('Task deleted successfully!');
+    } catch (error) {
+      console.error("Error deleting todo:", error);
+      toast.error('Failed to delete task');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleTodo = async (todo: Todo) => {
+    if (!program || !wallet.publicKey) return;
+
+    try {
+      setLoading(true);
+      await program.methods
+        .markTask()
+        .accounts({
+          taskAccount: todo.publicKey,
+          authority: wallet.publicKey,
+        })
+        .rpc();
+
+      await fetchTodos();
+      toast.success('Task status updated!');
+    } catch (error) {
+      console.error("Error toggling todo:", error);
+      toast.error('Failed to update task status');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchTodos = async () => {
+    if (!program || !wallet.publicKey) return;
+
+    try {
+      const accounts = await connection.getProgramAccounts(program.programId);
+      
+      // Log raw data để debug
+      accounts.forEach(acc => {
+        console.log("Account:", {
+          pubkey: acc.pubkey.toString(),
+          data: Array.from(acc.account.data),
+          owner: acc.account.owner.toString()
+        });
+      });
+
+      // Parse với type safety
+      const parsedTodos = accounts
+        .filter(acc => acc.account.data.length >= 8)
+        .map(({ pubkey, account }): Todo | null => {
+          const data = account.data;
+          try {
+            const authority = new PublicKey(data.slice(8, 40));
+            const contentLength = data.slice(40, 44).readUInt32LE(0);
+            const content = new TextDecoder().decode(data.slice(44, 44 + contentLength));
+            const marked = Boolean(data[44 + contentLength]);
+
+            const todo: Todo = {
+              publicKey: pubkey,
+              account: {
+                authority,
+                content,
+                marked,
+              }
+            };
+            return todo;
+          } catch (e) {
+            console.error("Error parsing account:", e);
+            return null;
+          }
+        })
+        .filter((todo): todo is Todo => todo !== null); // Type guard
+
+      console.log("Parsed todos:", parsedTodos);
+      setTodos(parsedTodos);
+    } catch (error) {
+      console.error("Error fetching todos:", error);
+      toast.error('Failed to load tasks');
+    }
+  };
+
+  useEffect(() => {
+    if (program && wallet.publicKey) {
+      fetchTodos();
+    }
+  }, [program, wallet.publicKey]);
+
+  return (
+    <div className="min-h-screen p-8">
+      <div className="max-w-2xl mx-auto">
+        <div className="flex justify-between items-center mb-8">
+          <h1 className="text-3xl font-bold">Solana Todo App</h1>
+          <WalletMultiButton />
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+
+        {wallet.connected ? (
+          <>
+            <form onSubmit={addTodo} className="mb-8">
+              <div className="flex gap-4">
+                <input
+                  type="text"
+                  value={newTask}
+                  onChange={(e) => setNewTask(e.target.value)}
+                  placeholder="Add a new task..."
+                  className="flex-1 p-2 border rounded-lg dark:bg-gray-800"
+                />
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+                >
+                  Add Task
+                </button>
+              </div>
+            </form>
+
+            <div className="space-y-4">
+              {loading ? (
+                <div>Loading tasks...</div>
+              ) : todos.length === 0 ? (
+                <div>No tasks found</div>
+              ) : (
+                todos.map((todo) => (
+                  <TodoItem
+                    key={todo.publicKey.toString()}
+                    task={todo.account.content}
+                    completed={todo.account.marked}
+                    onDelete={() => deleteTodo(todo)}
+                    onToggle={() => toggleTodo(todo)}
+                    loading={loading}
+                  />
+                ))
+              )}
+            </div>
+          </>
+        ) : (
+          <div className="text-center py-20">
+            <h2 className="text-xl mb-4">Please connect your wallet to use the Todo App</h2>
+            <p className="text-gray-500">Connect using the button above to get started</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

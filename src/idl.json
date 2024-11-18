@@ -1,0 +1,113 @@
+{
+  "address": "34HsRQej7oKwqBqnm7BojyoUWYwek39QjJkgkPPK6aab",
+  "metadata": {
+    "name": "todoapp",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Created with Anchor"
+  },
+  "instructions": [
+    {
+      "name": "add_task",
+      "discriminator": [234, 40, 30, 119, 150, 53, 76, 83],
+      "accounts": [
+        {
+          "name": "task_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [116, 97, 115, 107]
+              },
+              {
+                "kind": "account",
+                "path": "authority"
+              },
+              {
+                "kind": "arg",
+                "path": "content"
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "content",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "mark_task",
+      "discriminator": [69, 34, 192, 173, 250, 226, 213, 108],
+      "accounts": [
+        {
+          "name": "task_account",
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": ["task_account"]
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "remove_task",
+      "discriminator": [129, 98, 0, 238, 73, 182, 74, 3],
+      "accounts": [
+        {
+          "name": "task_account",
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true,
+          "relations": ["task_account"]
+        }
+      ],
+      "args": []
+    }
+  ],
+  "accounts": [
+    {
+      "name": "TaskAccount",
+      "discriminator": [235, 32, 10, 23, 81, 60, 170, 203]
+    }
+  ],
+  "types": [
+    {
+      "name": "TaskAccount",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "content",
+            "type": "string"
+          },
+          {
+            "name": "marked",
+            "type": "bool"
+          }
+        ]
+      }
+    }
+  ]
+}
